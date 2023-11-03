@@ -7,9 +7,9 @@ Ansible roles to tune Operating Systems, focused on Debian 12. Roles are tested 
 License
 -------
 
-GPL-3+
+MIT
 
 Author Information
 ------------------
 
-For questions or suggestions, contact devops@sheypoor.com
+For questions or suggestions, contact ariaeslami021@gmail.com
