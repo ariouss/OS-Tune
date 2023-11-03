@@ -1,0 +1,407 @@
+---
+# tasks file for ostune
+- name: Install unattended-upgrades 
+  ansible.builtin.package:
+    name:
+      - unattended-upgrades
+      - apt-listchanges
+    state: present
+    update_cache: true
+  become: true
+  tags:
+    - ostune
+    - unattended-upgrades
+
+- name: copy apt preferences
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dst }}"
+    mode: "{{ item.mod }}"
+  with_items:
+    - src: 20auto-upgrades
+      dst: /etc/apt/apt.conf.d/
+      mod: '0644'
+    - src: 50unattended-upgrades
+      dst: /etc/apt/apt.conf.d/
+      mod: '0644'
+    - src: listchanges.conf
+      dst: /etc/apt/
+      mod: '0755'
+  become: true
+  tags:
+    - ostune
+    - unattended-upgrades
+
+- name: Install fail2ban
+  ansible.builtin.package:
+    name:
+      - fail2ban
+    state: present
+  become: true
+  tags:
+    - ostune
+    - fail2ban
+
+- name: block tty logins
+  ansible.builtin.copy:
+    src: access.conf
+    dest: /etc/security/
+    mode: '0644'
+  become: true
+  tags:
+    - ostune
+    - security
+
+- name: Install mailutils
+  ansible.builtin.package:
+    name:
+      - mailutils
+      - exim4
+    state: present
+  become: true
+  tags:
+    - ostune
+    - mailutils
+
+- name: ensure password is set in exim
+  ansible.builtin.lineinfile:
+    path: /etc/exim4/passwd.client
+    regexp: '^\*\:{{ smtp_user }}\:'
+    line: "*:{{ smtp_user }}:{{ smtp_pass }}"
+  become: true
+  tags:
+    - ostune
+    - mailutils
+
+- name: let allow unencrypted passwords
+  ansible.builtin.lineinfile:
+    path: /etc/exim4/exim4.conf.localmacros
+    regex: '^AUTH_CLIENT_ALLOW_NOTLS_PASSWORDS'
+    line: "AUTH_CLIENT_ALLOW_NOTLS_PASSWORDS = 1"
+    mode: 0644
+    create: yes
+  become: true
+  tags:
+    - ostune
+    - mailutils
+
+- name: set email address for root
+  ansible.builtin.lineinfile:
+    path: /etc/email-addresses
+    regex: '^root\: '
+    line: "root: {{ email_address }}"
+    mode: 0644
+  become: true
+  tags:
+    - ostune
+    - mailutils
+
+- name: set email alias to root
+  ansible.builtin.lineinfile:
+    path: /etc/aliases
+    regex: '^root\: '
+    line: "root: {{ email_address }}"
+    mode: 0644
+  become: true
+  tags:
+    - ostune
+    - mailutils
+
+- name: set exim4 config
+  ansible.builtin.template:
+    src: update-exim4.conf.conf.j2
+    dest: /etc/exim4/update-exim4.conf.conf
+    mode: '0644'
+  become: true
+  notify:
+    - reconfigure exim4
+  tags:
+    - ostune
+    - mailutils
+
+- name: disable IPv6 with sysctl
+  ansible.posix.sysctl:
+    name: "{{ item }}"
+    value: "1"
+    state: present
+    reload: true
+  with_items:
+    - net.ipv6.conf.all.disable_ipv6
+    - net.ipv6.conf.default.disable_ipv6
+    - net.ipv6.conf.lo.disable_ipv6
+  become: true
+  tags:
+    - ostune
+    - ipv6
+
+- name: blacklist ipv6 in modprobe
+  ansible.builtin.lineinfile:
+    dest: /etc/modprobe.d/blacklist.conf
+    line: 'blacklist ipv6'
+    mode: 0644
+    create: yes
+  become: true
+  tags:
+    - ostune
+    - ipv6
+
+- name: install firewalld
+  ansible.builtin.package:
+    name: firewalld
+    state: present
+  become: true
+  tags:
+    - ostune
+    - firewalld
+
+- name: install apparmor profiles
+  ansible.builtin.package:
+    name:
+      - apparmor-profiles
+      - apparmor-profiles-extra
+    state: present
+  become: true
+  tags:
+    - ostune
+    - apparmor
+
+- name: install prometheus exporters
+  ansible.builtin.package:
+    name:
+      - prometheus-node-exporter
+    state: present
+  become: true
+  tags:
+    - ostune
+    - prometheus
+
+- name: permit node exporter in firewalld
+  ansible.posix.firewalld:
+    port: 9100/tcp
+    permanent: true
+    state: enabled
+  become: true
+  tags:
+    - ostune
+    - firewalld
+    - prometheus
+
+- name: Check open-vm-tools to be installed
+  ansible.builtin.package:
+    name:
+      - open-vm-tools
+    state: present
+  become: true
+  tags:
+    - ostune
+    - openvmtools
+
+- name: Install tuned
+  ansible.builtin.package:
+    name:
+      - tuned
+    state: present
+  become: true
+  tags:
+    - ostune
+    - tuned
+
+- name: Install rsyslog
+  ansible.builtin.package:
+    name:
+      - rsyslog
+    state: present
+  become: true
+  tags:
+    - ostune
+    - rsyslog
+
+- name: config rsyslog to send syslog to graylog
+  ansible.builtin.template:
+    src: graylog.conf.j2
+    dest: /etc/rsyslog.d/graylog.conf
+    mode: '0644'
+  become: true
+  notify:
+    - restart rsyslog
+  tags:
+    - ostune
+    - rsyslog
+
+- name: install zram-tools
+  ansible.builtin.package:
+    name: zram-tools
+    state: present
+  become: true
+  tags:
+    - ostune
+    - zram
+
+- name: set zram compression algorithm
+  ansible.builtin.lineinfile:
+    path: /etc/default/zramswap
+    regex: '^ALGO'
+    line: "ALGO=zstd"
+    mode: 0644
+  become: true
+  notify:
+    - reload zramswap
+  tags:
+    - ostune
+    - zram
+
+- name: set zram percentage of ram
+  ansible.builtin.lineinfile:
+    path: /etc/default/zramswap
+    regex: '^PERCENT'
+    line: "PERCENT=60"
+    mode: 0644
+  become: true
+  notify:
+    - reload zramswap
+  tags:
+    - ostune
+    - zram
+
+- name: set zram priority over disk
+  ansible.builtin.lineinfile:
+    path: /etc/default/zramswap
+    regex: '^PRIORITY'
+    line: "PRIORITY=1000"
+    mode: 0644
+  become: true
+  notify:
+    - reload zramswap
+  tags:
+    - ostune
+    - zram
+
+- name: lower the priority of disk swap
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    regex: '^/dev/mapper/debian--vg-swap_1'
+    line: "/dev/mapper/debian--vg-swap_1 none swap sw,pri=2 0 0"
+    mode: 0664
+  become: true
+  tags:
+    - ostune
+    - zram
+
+- name: restrict crontab usage
+  ansible.builtin.lineinfile:
+    path: /etc/cron.allow
+    regexp: '^root'
+    line: "root"
+    create: yes
+  become: true
+  tags:
+    - ostune
+    - hardening
+
+- name: reduce permission on device files
+  # Devices that have improper (world) permissions might be accessed by any
+  # system user. This might open security holes if these are shared devices
+  # or hold binaries (disks for example). The administrator should properly
+  # set device access (using group configuration to provide access to a
+  # device to multiple users, for example).
+  ansible.builtin.file:
+    path: "{{ item }}"
+    mode: 'o-rwx'
+  with_items:
+    - /dev/autofs
+    - /dev/fuse
+    - /dev/kmsg
+  become: true
+  tags:
+    - ostune
+    - hardening
+
+- name: remove unnessecary group writes
+  ansible.builtin.file:
+    path: "{{ item }}"
+    mode: 'g-w'
+  with_items:
+    - /etc/fstab
+  become: true
+  tags:
+    - ostune
+    - hardening
+
+- name: remove unnessecary setuids
+  ansible.builtin.file:
+    path: "{{ item }}"
+    mode: 'u-s'
+  with_items:
+    - /bin/su
+    - /usr/bin/passwd
+  become: true
+  tags:
+    - ostune
+    - hardening
+
+- name: remove unnessecary setgids
+  ansible.builtin.file:
+    path: "{{ item }}"
+    mode: 'g-s'
+  with_items:
+    - /usr/bin/wall
+  become: true
+  tags:
+    - ostune
+    - hardening
+
+- name: disable login for some users
+  ansible.builtin.lineinfile:
+    path: /etc/passwd
+    regexp: '^{{ item.username }}'
+    line: '{{ item.username }}:x:{{ item.uid }}:{{ item.gid }}:{{ item.groupname }}:{{ item.home }}:/usr/sbin/nologin'
+  with_items:
+    - username: "root"
+      groupname: "root"
+      uid: 0
+      gid: 0
+      home: "/root"
+    - username: "sync"
+      groupname: "sync"
+      uid: 4
+      gid: 65534
+      home: "/bin"
+  become: true
+  tags:
+    - ostune
+    - hardening
+
+- name: add nonexistent instead / for systemd-coredump user
+  ansible.builtin.lineinfile:
+    path: /etc/passwd
+    regexp: '^systemd-coredump'
+    line: 'systemd-coredump:x:999:999:systemd Core Dumper:/nonexistent:/usr/sbin/nologin'
+  become: true
+  tags:
+    - ostune
+    - hardening
+
+- name: create base directory
+  ansible.builtin.file:
+    path: /usr/lib/tuned/base
+    state: directory
+    mode: '0755'
+
+- name : install tuned base profile
+  ansible.builtin.copy:
+    src: tuned-base.conf
+    dest: /usr/lib/tuned/base/tuned.conf
+    owner: root
+    group: root
+    mode: '0644'
+  become: true
+  tags:
+    - ostune
+    - tuned
+
+- name: activate base tuned profile
+  ansible.builtin.shell: sudo tuned-adm profile base
+  become: true
+  tags:
+    - ostune
+    - tuned
